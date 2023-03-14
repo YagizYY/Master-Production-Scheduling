@@ -1,0 +1,147 @@
+model ModelName
+  options noimplicit
+  uses "mmxprs"
+  ! uses "mminsight" ! uncomment this line for an Xpress Insight model
+
+  declarations
+
+  !PARAMETERS
+
+  week = 1..13
+
+
+  SS_A : array(week) of real
+  SS_P: array(week) of real
+  SS_C: array(week) of real
+  DemandAir: array(week) of real
+  DemandPro : array(week) of real
+  C : array(week) of real
+
+  h_A = 0.25
+  h_P = 0.28
+  Pi_A = 0.5
+  Pi_P = 0.58
+  p_A = 2
+  p_P = 2.5
+  o = 11.75
+  pc_TB = 78
+  pc_TA = 67
+  pc_C = 85
+  w = 0.1
+
+
+
+  !VARIABLES
+
+  I_A: array(week) of mpvar
+  I_A_arti: array(week) of mpvar
+  I_A_eksi: array(week) of mpvar
+  I_P: array(week) of mpvar
+  I_P_arti: array(week) of mpvar
+  I_P_eksi: array(week) of mpvar
+  P_A: array(week) of mpvar
+  P_P: array(week) of mpvar
+  O_t : array(week) of mpvar
+  Q_T: array(week) of mpvar
+  Q_C: array(week) of mpvar
+  I_C: array(week) of mpvar
+
+
+    Objective:linctr
+  end-declarations
+
+  !DATA
+
+  DemandAir :: [39714,40938,43036,45708,50967,56795,64329,66673,57664,57107,50779,45656,43887]
+  DemandPro :: [22310,25522,25950,26393,30009,33866,39255,40361,33866,32082,29638,21559,20238]
+  C :: [175500, 175500, 175500, 175500, 175500, 189000, 189000, 189000, 189000, 189000, 189000, 189000, 189000]
+  SS_A :: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  SS_P :: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+
+  !CONSTRAINTS
+
+  !1
+  p_A*38000 + p_P*20000 <= C(1) + O_t(1)
+  forall(t in 2..13)
+  p_A*P_A(t) + p_P*P_P(t) <= C(t) + O_t(t)
+
+  !2
+  forall(t in 1..5)
+  O_t(t) <= 20*60*65
+
+  forall(t in 6..13)
+  O_t(t) <= 20*60*70
+
+  !3
+  I_A(1) = 1100 + 38000 - DemandAir(1)
+  I_P(1) = 1500 + 20000 - DemandPro(1)
+
+  forall(t in 2..13) do
+  I_A(t) = I_A(t-1) + P_A(t) - DemandAir(t)
+  I_P(t) = I_P(t-1) + P_P(t) - DemandPro(t)
+  end-do
+
+  !4
+  forall(t in week) do
+  I_A(t) = I_A_arti(t) - I_A_eksi(t)
+  I_P(t) = I_P_arti(t) - I_P_eksi(t)
+  end-do
+  
+
+  !6
+  
+  I_C(1) = 2000 + 85000 + Q_C(1) - 38000 - 20000
+  I_C(2) = I_C(1) + 85000 + Q_C(2) - P_A(2) - P_P(2)
+  forall(t in 3..13)
+  I_C(t) = I_C(t-1) + Q_T(t-2) + Q_C(t) - P_A(t) - P_P(t)
+  
+
+  forall(t in week)
+  Q_T(t) <= 75000
+  
+
+  forall(t in week) do
+  I_A_arti(t) >= 0
+  I_A_eksi(t) >= 0
+  I_P_arti(t) >= 0
+  I_P_eksi(t) >= 0
+  P_A(t) >= 0
+  P_P(t) >= 0
+  O_t(t) >= 0
+  I_C(t) >= 0
+  Q_C(t) >= 0
+  Q_T(t) >= 0
+  end-do
+  
+
+
+  forall(t in week) do
+  I_A_arti(t) is_integer
+  I_A_eksi(t) is_integer
+  I_P_arti(t) is_integer
+  I_P_eksi(t) is_integer
+  P_A(t) is_integer
+  P_P(t) is_integer
+  I_C(t) is_integer
+  Q_C(t) is_integer
+  Q_T(t) is_integer
+  end-do
+
+  Objective:= 100*I_A_eksi(13) + 130*I_P_eksi(13) + 10*I_A_arti(13) + 13*I_P_arti(13) + sum(t in 1..4)(o*O_t(t)/60 + w*I_C(t)+pc_TB*Q_T(t)+pc_C*Q_C(t)+h_A*I_A_arti(t)+Pi_A*I_A_eksi(t)+h_P*I_P_arti(t)+Pi_P*I_P_eksi(t)) + sum(t in 5..13)(o*O_t(t)/60 + w*I_C(t)+pc_TA*Q_T(t)+pc_C*Q_C(t)+h_A*I_A_arti(t)+Pi_A*I_A_eksi(t)+h_P*I_P_arti(t)+Pi_P*I_P_eksi(t))
+
+
+  minimize (Objective)
+
+  writeln("Begin running model")
+  writeln("total cost: ", getsol(Objective))
+  forall(t in 1..13)do
+  writeln(getsol(P_A(t)), " Air in period ", t)
+  writeln(getsol(P_P(t)), " Pro in period ", t)
+  writeln(getsol(Q_T(t)), " Taiwan ", t)
+  writeln(getsol(Q_C(t)), " China ", t)
+  writeln(getsol(I_P_arti(t)), " Inventory pro", t)
+
+  end-do
+  writeln("End running model")
+end-model
